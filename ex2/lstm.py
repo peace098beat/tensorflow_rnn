@@ -1,11 +1,20 @@
+#! coding:utf-8
+"""
+lstm.py
 
+引用元:[RNNにsin波を学習させて予測してみた](http://qiita.com/yuyakato/items/ab38064ca215e8750865)
+
+上プログラムをr1.0用に対応
+
+
+"""
 import sys
 import yaml # sudo pip3 install pyyaml
-import tensorflow as tf
-from tensorflow.models.rnn import rnn, rnn_cell
 import numpy as np
 import random
 
+import tensorflow as tf
+# from tensorflow.models.rnn import rnn, rnn_cell
 
 def make_mini_batch(train_data, size_of_mini_batch, length_of_sequences):
     inputs  = np.empty(0)
@@ -27,7 +36,7 @@ if len(sys.argv) <= 1:
 param_path = sys.argv[1]
 print("param_path:", param_path)
 
-with open(param_path, "r") as file:
+with open(param_path, "r", encoding="utf-8") as file:
     param = yaml.load(file.read())
 
 for key in param.keys():
@@ -73,26 +82,35 @@ with tf.Graph().as_default():
         in1 = tf.transpose(input_ph, [1, 0, 2])         # (batch, sequence, data) -> (sequence, batch, data)
         in2 = tf.reshape(in1, [-1, num_of_input_nodes]) # (sequence, batch, data) -> (sequence * batch, data)
         in3 = tf.matmul(in2, weight1_var) + bias1_var
-        in4 = tf.split(0, length_of_sequences, in3)     # sequence * (batch, data)
+        # r0.8x: in4 = tf.split(0, length_of_sequences, in3)     # sequence * (batch, data)
+        in4 = tf.split(in3, length_of_sequences)     # sequence * (batch, data)
 
-        cell = rnn_cell.BasicLSTMCell(num_of_hidden_nodes, forget_bias=forget_bias)
-        rnn_output, states_op = rnn.rnn(cell, in4, initial_state=istate_ph)
+        # cell = rnn_cell.BasicLSTMCell(num_of_hidden_nodes, forget_bias=forget_bias) # 0.8x
+        cell = tf.contrib.rnn.BasicLSTMCell(num_of_hidden_nodes, forget_bias=forget_bias, state_is_tuple=False)
+        # r0.8: rnn_output, states_op = rnn.rnn(cell, in4, initial_state=istate_ph)
+        rnn_output, states_op = tf.contrib.rnn.static_rnn(cell, in4, initial_state=istate_ph)
         output_op = tf.matmul(rnn_output[-1], weight2_var) + bias2_var
 
     with tf.name_scope("loss") as scope:
         square_error = tf.reduce_mean(tf.square(output_op - supervisor_ph))
         loss_op      = square_error
-        tf.scalar_summary("loss", loss_op)
+        # tf.scalar_summary("loss", loss_op) # r0.8x
+        tf.summary.scalar("loss", loss_op)
 
     with tf.name_scope("training") as scope:
         training_op = optimizer.minimize(loss_op)
 
-    summary_op = tf.merge_all_summaries()
+    # summary_op = tf.merge_all_summaries() # 0.8x
+    summary_op = tf.summary.merge_all()
+
     init = tf.initialize_all_variables()
 
     with tf.Session() as sess:
         saver = tf.train.Saver()
-        summary_writer = tf.train.SummaryWriter("data", graph=sess.graph)
+
+        # summary_writer = tf.train.SummaryWriter("data", graph=sess.graph) # 0.8x
+        summary_writer = tf.summary.FileWriter("data", graph=sess.graph)
+
         sess.run(init)
 
         losses = np.empty((0, 2))
